@@ -4,9 +4,10 @@ RunPod Serverless handler for Qwen-Image-Layered.
 Decomposes an input image into multiple RGBA layers using the
 QwenImageLayeredPipeline from Hugging Face diffusers.
 
-Model loading priority:
-  1. RunPod cached model at /runpod-volume/huggingface-cache/hub/
-  2. HuggingFace Hub download (fallback)
+Model is loaded from RunPod's cached model directory via HF_HUB_CACHE
+(set in the Dockerfile).  The Dockerfile also sets HF_HUB_OFFLINE=1 so
+from_pretrained will fail fast instead of silently downloading 57 GB
+if the cache is missing.
 """
 
 import base64
@@ -20,22 +21,8 @@ import torch
 from PIL import Image
 
 MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen-Image-Layered")
-CACHE_DIR = "/runpod-volume/huggingface-cache/hub"
 
 pipeline = None
-
-
-def find_cached_model(model_name: str) -> str | None:
-    """Locate a model in RunPod's HuggingFace cache directory."""
-    cache_name = model_name.replace("/", "--")
-    snapshots_dir = os.path.join(CACHE_DIR, f"models--{cache_name}", "snapshots")
-    if os.path.exists(snapshots_dir):
-        snapshots = os.listdir(snapshots_dir)
-        if snapshots:
-            path = os.path.join(snapshots_dir, snapshots[0])
-            print(f"Found cached model at: {path}")
-            return path
-    return None
 
 
 def load_model():
@@ -44,14 +31,19 @@ def load_model():
 
     from diffusers import QwenImageLayeredPipeline
 
-    # Try RunPod model cache first, fall back to HF Hub download
-    load_path = find_cached_model(MODEL_NAME) or MODEL_NAME
+    cache_dir = os.getenv("HF_HUB_CACHE", "")
+    print(f"HF_HUB_CACHE  = {cache_dir}")
+    print(f"HF_HUB_OFFLINE= {os.getenv('HF_HUB_OFFLINE', 'not set')}")
+    if cache_dir and os.path.isdir(cache_dir):
+        print(f"Cache contents: {os.listdir(cache_dir)[:20]}")
+    else:
+        print(f"WARNING: cache dir does not exist — model will be downloaded")
 
-    print(f"Loading model from: {load_path}")
+    print(f"Loading model '{MODEL_NAME}' ...")
     start = time.time()
 
     pipeline = QwenImageLayeredPipeline.from_pretrained(
-        load_path,
+        MODEL_NAME,
         torch_dtype=torch.bfloat16,
     )
     pipeline = pipeline.to("cuda")
