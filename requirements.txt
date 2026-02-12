@@ -1,5 +1,4 @@
 runpod~=1.7.6
-torch>=2.1.0
 transformers>=4.51.3
 accelerate
 safetensors
